@@ -76,6 +76,11 @@ Planned: `@strutvane/files` (RFC-0002), then notify, reports, payments/billing, 
   - always clean up (connections, temp files)
   - make every retry idempotent
 - **Tests are part of the change.** Every behaviour has unit tests. Data logic is tested against real engines (no mocks for SQL). Public types get type-level tests that prove misuse fails to compile. Coverage thresholds: 90/90/85/90.
+- **Security is tested continuously (VAPT).**
+  - Write a threat model before code, and attack-style tests for your package's surface (tenancy, injection, uploads, sessions, enumeration, rate limits).
+  - Fuzz every parser.
+  - Every security fix ships with a regression test for the whole class.
+  - See the hub `docs/13-testing-strategy.md` §14.
 - **Never edit synced files** (`tsconfig.base.json`, `biome.base.json`, `vitest.shared.ts`, `.github/workflows/*`, `.gitattributes`, `.editorconfig`, `.claude/ECOSYSTEM.md`, shared agents/skills). Change them in strutvane-tooling.
 
 ## 6. Workflow
@@ -95,10 +100,10 @@ Planned: `@strutvane/files` (RFC-0002), then notify, reports, payments/billing, 
   - tooling (configs, CI, sync)
   - contracts v0 (implemented and tested, not released)
   - docs site
-  - spikes 01–03 (migrations, policy → SQL, RLS) → ADR-0007/0008/0009
+  - spikes 01–08 (375 tests: migrations, policy → SQL, RLS, registry compiler, OpenAPI client, three-way merge, Better Auth adapter, UI renderer) → ADR-0007 to ADR-0014
   - RFC-0002 (files), RFC-0003 (errors & messages) and RFC-0004 (`@strutvane/logs`) drafted
-- **Next:** spikes for the registry compiler, OpenAPI client, three-way merge, Better Auth adapter and UI renderer, then Phase 1 (core, CLI, framework).
-- **npm:** `@strutvane/{contracts,core,framework,auth,ui,cli,devkit}`, `strutvane` and `create-strutvane` are reserved with placeholder versions. `@strutvane/logs` is not reserved yet. Nothing is released yet.
+- **Next:** spike 09 (logger throughput, RFC-0004), GOVERNANCE.md, then Phase 1: core, CLI, framework and `@strutvane/logs`.
+- **npm:** `@strutvane/{contracts,core,framework,auth,ui,cli,devkit,logs}`, `strutvane` and `create-strutvane` are reserved with placeholder versions. Nothing is released yet.
 
 ## 8. Contributor quick start (human or AI)
 
