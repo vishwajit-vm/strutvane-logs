@@ -4,7 +4,11 @@ labels: [bug, needs-triage]
 body:
   - type: textarea
     id: what
-    attributes: { label: What happened?, description: Include the steps to reproduce and the expected vs actual behaviour. }
+    attributes:
+      {
+        label: What happened?,
+        description: Include the steps to reproduce and the expected vs actual behaviour.,
+      }
     validations: { required: true }
   - type: input
     id: version

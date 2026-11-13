@@ -8,7 +8,8 @@ body:
     validations: { required: true }
   - type: textarea
     id: proposal
-    attributes: { label: Proposal, description: How should Strutvane Logs solve it? Code sketches welcome. }
+    attributes:
+      { label: Proposal, description: How should Strutvane Logs solve it? Code sketches welcome. }
   - type: textarea
     id: alternatives
     attributes: { label: Alternatives / prior art }

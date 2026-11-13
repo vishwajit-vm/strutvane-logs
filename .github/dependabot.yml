@@ -1,0 +1,27 @@
+# Managed by strutvane-tooling (canonical/.github/dependabot.yml).
+# Weekly, grouped update PRs. CI must pass before anything merges.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    ignore:
+      # TypeScript is deliberately pinned to 6.x: TypeScript 7 (Go) ships no compiler API yet, and
+      # Strutvane's codegen (ts-morph) depends on it. Move to 7 only through an ADR, once 7.1's API
+      # exists. See docs/11-technology-decisions.md in the hub.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]

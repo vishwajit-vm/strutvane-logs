@@ -1,0 +1,46 @@
+{
+  // Managed by strutvane-tooling (canonical/tsconfig.base.json). Do not edit in package repos:
+  // change it in strutvane-tooling and run `pnpm sync` there.
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    // Language & modules: modern Node (24+) ESM only.
+    "target": "ES2024",
+    "lib": ["ES2024"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "moduleDetection": "force",
+    "resolveJsonModule": true,
+
+    // Maximum type safety. Each flag removes a class of runtime bugs.
+    "strict": true,
+    "noUncheckedIndexedAccess": true, // arr[i] / obj[key] may be undefined: handle it
+    "exactOptionalPropertyTypes": true, // `x?: string` does not silently accept `undefined`
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "useUnknownInCatchVariables": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+
+    // Build-friendliness: every file can be compiled on its own, and type declarations can be
+    // emitted without the TypeScript compiler API (fast, and safe for TypeScript 7 / tsgo).
+    "isolatedModules": true,
+    "isolatedDeclarations": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true, // no enums/namespaces/parameter properties: plain, strippable TS
+    // Import siblings as './x.ts' (what Node's type stripping and bundlers expect). Allowed
+    // because type-checking never emits; tsdown produces the published JavaScript.
+    "allowImportingTsExtensions": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+
+    // Hygiene
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  }
+}

@@ -16,7 +16,33 @@ It is one repo of the **Strutvane** polyrepo ecosystem (one GitHub repo per pack
 
 ## Status
 
-- **No code in this repo yet.** It is implemented in its roadmap phase (Phase 1, see ECOSYSTEM.md §7). Design first: [RFC-0004](https://github.com/vishwajit-vm/strutvane/blob/main/docs/rfcs/0004-logs-package.md) is the spec. Spike 09 (done, ADR-0015) proved the design: own pipeline and writer (no sonic-boom), 1.3–4× faster than pino, per-process files, a ref'd shutdown deadline and `compareLogFiles` ordering.
+- **Implemented (Phase 1), version `0.1.0-next.0` (Changesets pre mode `next`), not released.** [RFC-0004](https://github.com/vishwajit-vm/strutvane/blob/main/docs/rfcs/0004-logs-package.md) is the spec, and ADR-0015 / spike 09 the proven design: own pipeline and O_APPEND writer (no pino or sonic-boom), per-process files, a ref'd shutdown deadline, `compareLogFiles` ordering.
+- **TEMPORARY:** `pnpm-workspace.yaml` overrides `@strutvane/contracts` with `link:../contracts` because contracts isn't on npm yet. `check-deps` flags it; remove the override once `@strutvane/contracts@0.1.0-next.0` is published (ADR-0016). The adapters' `hono` and `express` are optional peer dependencies.
+
+## Code map
+
+| Path | What |
+|---|---|
+| `src/logger.ts` | The pipeline: record → context → sanitise → one-line serialise → bounded queue → batched writes → transport, stderr fallback |
+| `src/create.ts`, `src/default.ts`, `src/config.ts` | `createLogger` (options → env → defaults), the lazy default `log`, env parsing |
+| `src/redact.ts`, `src/serialize.ts`, `src/record.ts` | Redaction and safety limits, NDJSON line, record shape (contracts `LogRecord`) |
+| `src/queue.ts`, `src/files.ts`, `src/transports/` | Priority queue, file naming/ordering/retention, file and console transports |
+| `src/context.ts`, `src/shutdown.ts`, `src/noop.ts` | AsyncLocalStorage context, shutdown flush, disabled logger |
+| `src/http/` | Framework-agnostic request logging (`/http` entry) |
+| `src/adapters/` | `node`, `hono`, `express` entries |
+| `src/viewer/` | Viewer: `access` (who may open it), `filters`, `store` (reading files), `tail` (SSE), `csv`, `ui` (the page), `handler` (routes) |
+| `test/` | Unit, property (fast-check), attack-style viewer tests, adapters over real servers, real child processes (`test/fixtures/`) |
+
+## Commands
+
+- `corepack pnpm@12.18.0 run ci`: the quality gate (Biome → tsc → Vitest with coverage 90/90/85/90 → tsdown).
+- `corepack pnpm@12.18.0 exec vitest run test/viewer.test.ts`: one file.
+
+## Gotchas
+
+- Never write the raw characters U+2028/U+2029 into source; build them with `String.fromCharCode` (some editors and tools turn ` ` escapes into the raw characters).
+- The viewer's CSRF token is per handler instance. Behind several processes, use sticky sessions for the viewer, or clear from one instance.
+- Real external SIGTERM can't be caught on Windows (spike 09); the real-signal test is skipped there.
 - The source of truth for decisions is `../../docs/00-executive-summary.md` (D1–D20). If anything here conflicts with it, that file wins.
 - The package spec is `../../docs/rfcs/0004-logs-package.md` (online: https://github.com/vishwajit-vm/strutvane/blob/main/docs/rfcs/0004-logs-package.md).
 
