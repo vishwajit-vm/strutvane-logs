@@ -1,0 +1,16 @@
+# Managed by strutvane-tooling (canonical/.gitattributes).
+# Force LF line endings in the repo and in every checkout, on every OS. Without this, Windows
+# machines with core.autocrlf=true check files out with CRLF and the formatter (lineEnding: lf)
+# fails on a perfectly clean clone.
+* text=auto eol=lf
+
+# Binary files: never touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.pdf binary

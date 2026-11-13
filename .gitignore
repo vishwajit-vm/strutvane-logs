@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+coverage/
+*.tsbuildinfo
+.turbo/
+.vitest/
+
+# Environment & secrets: never commit real env files
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Docker: local development only, never committed (ADR-0006)
+docker/
+Dockerfile*
+.dockerignore
+compose.yaml
+compose.*.yaml
+docker-compose*.yml
+docker-compose*.yaml
+
+# Logs & OS / editor files
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Claude Code: personal, machine-local settings
+.claude/settings.local.json

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/vishwajit-vm/strutvane-logs/security/advisories/new
+    about: Report security issues privately.
+  - name: Ecosystem blueprint & discussions
+    url: https://github.com/vishwajit-vm/strutvane
+    about: Architecture, roadmap and cross-package questions.

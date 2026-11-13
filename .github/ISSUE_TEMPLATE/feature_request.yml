@@ -1,0 +1,14 @@
+name: Feature request / design feedback
+description: Suggest a capability or give feedback on the design
+labels: [enhancement, needs-triage]
+body:
+  - type: textarea
+    id: problem
+    attributes: { label: Problem, description: What are you trying to do and what is in the way? }
+    validations: { required: true }
+  - type: textarea
+    id: proposal
+    attributes: { label: Proposal, description: How should Strutvane Logs solve it? Code sketches welcome. }
+  - type: textarea
+    id: alternatives
+    attributes: { label: Alternatives / prior art }
