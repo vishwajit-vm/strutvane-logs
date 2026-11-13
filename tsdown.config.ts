@@ -8,6 +8,7 @@ export default defineConfig({
     hono: 'src/adapters/hono.ts',
     express: 'src/adapters/express.ts',
     viewer: 'src/viewer/index.ts',
+    provider: 'src/provider.ts',
   },
   format: 'esm',
   platform: 'node',
@@ -16,5 +17,5 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   // dependencies and peerDependencies (contracts, hono, express) are never bundled by default.
-  deps: { neverBundle: ['hono', 'express', '@strutvane/contracts'] },
+  deps: { neverBundle: ['hono', 'express', '@strutvane/contracts', '@strutvane/core'] },
 })

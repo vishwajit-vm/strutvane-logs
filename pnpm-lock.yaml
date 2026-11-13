@@ -164,6 +164,7 @@ settings:
 
 overrides:
   '@strutvane/contracts': link:../contracts
+  '@strutvane/core': link:../core
 
 importers:
 
@@ -172,6 +173,9 @@ importers:
       '@strutvane/contracts':
         specifier: link:../contracts
         version: link:../contracts
+      '@strutvane/core':
+        specifier: link:../core
+        version: link:../core
     devDependencies:
       '@biomejs/biome':
         specifier: 2.6.7

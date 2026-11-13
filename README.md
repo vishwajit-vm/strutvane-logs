@@ -165,8 +165,14 @@ const log = createLogger({
 | `@strutvane/logs/hono` | `requestLogging`, `logs` |
 | `@strutvane/logs/express` | `requestLogging`, `errorLogging`, `logs` |
 | `@strutvane/logs/viewer` | `createViewerHandler` and its building blocks |
+| `@strutvane/logs/provider` | The Strutvane app provider: binds `LoggerToken`, logs every request and serves the viewer through core hooks (`http.onRequest` / `http.onResponse`), configured by `config/logging.ts` |
 
 `hono` and `express` are optional peer dependencies: install only the one you use.
+
+In a Strutvane app `create-strutvane` registers `@strutvane/logs/provider` for you. It reads
+`config/logging.ts` (`level`, `format`, `driver`, `path` relative to the project root, `retentionDays`,
+`maxDailySize`, `requests.ignore`, `requests.slowThresholdMs`, `viewer.enabled/path/token`), and never imports
+the framework: request logging and the viewer ride on the framework's core hooks.
 
 ## Security, in short
 

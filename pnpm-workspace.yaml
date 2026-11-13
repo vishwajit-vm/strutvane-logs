@@ -2,3 +2,4 @@
 # is published. Remove this override before committing; CI's check-deps step rejects it.
 overrides:
   "@strutvane/contracts": link:../contracts
+  "@strutvane/core": link:../core
