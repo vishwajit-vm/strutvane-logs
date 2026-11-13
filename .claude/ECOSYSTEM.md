@@ -95,14 +95,17 @@ Planned: `@strutvane/files` (RFC-0002), then notify, reports, payments/billing, 
 
 ## 7. Current status
 
-**Phase 0: foundations, in progress (updated 2026-11-13).**
+**Phase 0 (foundations) complete: Gate 0 passed on 2026-11-14. Phase 1 is next.**
 - **Done:**
   - tooling (configs, CI, sync)
   - contracts v0 (implemented and tested, not released)
   - docs site
   - spikes 01–09 (419 tests: migrations, policy → SQL, RLS, registry compiler, OpenAPI client, three-way merge, Better Auth adapter, UI renderer, logger throughput) → ADR-0007 to ADR-0015
   - RFC-0002 (files), RFC-0003 (errors & messages) and RFC-0004 (`@strutvane/logs`) drafted
-- **Next:** GOVERNANCE.md, then Phase 1: core, CLI, framework and `@strutvane/logs`.
+  - [GOVERNANCE.md](https://github.com/vishwajit-vm/strutvane/blob/main/GOVERNANCE.md) adopted; CodeQL scanning on
+- **Next:** Phase 1: core, CLI, framework and `@strutvane/logs`. RFC-0002/0003/0004 must be accepted first (GOVERNANCE.md §3).
+- **Carried over:** domains, trademark clearance, social handles (owner); OpenSSF Scorecard; the MySQL migration path.
+- **New here?** Recreate the full local layout with `node scripts/setup-workspace.mjs` from the hub.
 - **npm:** `@strutvane/{contracts,core,framework,auth,ui,cli,devkit,logs}`, `strutvane` and `create-strutvane` are reserved with placeholder versions. Nothing is released yet.
 
 ## 8. Contributor quick start (human or AI)
