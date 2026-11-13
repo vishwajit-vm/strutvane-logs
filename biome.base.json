@@ -38,7 +38,10 @@
         "noParameterAssign": "error",
         "useConst": "error"
       },
-      "complexity": { "noForEach": "off" }
+      "complexity": {
+        "noForEach": "off",
+        "useLiteralKeys": "off"
+      }
     }
   },
   "assist": { "actions": { "source": { "organizeImports": "on" } } }
