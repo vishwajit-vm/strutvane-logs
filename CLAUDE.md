@@ -16,7 +16,7 @@ It is one repo of the **Strutvane** polyrepo ecosystem (one GitHub repo per pack
 
 ## Status
 
-- **No code in this repo yet.** It is implemented in its roadmap phase (Phase 1, see ECOSYSTEM.md §7). Design first: [RFC-0004](https://github.com/vishwajit-vm/strutvane/blob/main/docs/rfcs/0004-logs-package.md) is the spec. A logger benchmark spike (09) runs before implementation.
+- **No code in this repo yet.** It is implemented in its roadmap phase (Phase 1, see ECOSYSTEM.md §7). Design first: [RFC-0004](https://github.com/vishwajit-vm/strutvane/blob/main/docs/rfcs/0004-logs-package.md) is the spec. Spike 09 (done, ADR-0015) proved the design: own pipeline and writer (no sonic-boom), 1.3–4× faster than pino, per-process files, a ref'd shutdown deadline and `compareLogFiles` ordering.
 - The source of truth for decisions is `../../docs/00-executive-summary.md` (D1–D20). If anything here conflicts with it, that file wins.
 - The package spec is `../../docs/rfcs/0004-logs-package.md` (online: https://github.com/vishwajit-vm/strutvane/blob/main/docs/rfcs/0004-logs-package.md).
 

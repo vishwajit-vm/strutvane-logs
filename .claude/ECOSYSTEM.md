@@ -100,9 +100,9 @@ Planned: `@strutvane/files` (RFC-0002), then notify, reports, payments/billing, 
   - tooling (configs, CI, sync)
   - contracts v0 (implemented and tested, not released)
   - docs site
-  - spikes 01–08 (375 tests: migrations, policy → SQL, RLS, registry compiler, OpenAPI client, three-way merge, Better Auth adapter, UI renderer) → ADR-0007 to ADR-0014
+  - spikes 01–09 (419 tests: migrations, policy → SQL, RLS, registry compiler, OpenAPI client, three-way merge, Better Auth adapter, UI renderer, logger throughput) → ADR-0007 to ADR-0015
   - RFC-0002 (files), RFC-0003 (errors & messages) and RFC-0004 (`@strutvane/logs`) drafted
-- **Next:** spike 09 (logger throughput, RFC-0004), GOVERNANCE.md, then Phase 1: core, CLI, framework and `@strutvane/logs`.
+- **Next:** GOVERNANCE.md, then Phase 1: core, CLI, framework and `@strutvane/logs`.
 - **npm:** `@strutvane/{contracts,core,framework,auth,ui,cli,devkit,logs}`, `strutvane` and `create-strutvane` are reserved with placeholder versions. Nothing is released yet.
 
 ## 8. Contributor quick start (human or AI)
