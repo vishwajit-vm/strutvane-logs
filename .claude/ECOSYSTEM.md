@@ -98,7 +98,7 @@ Planned: `@strutvane/files` (RFC-0002), then notify, reports, payments/billing, 
   - spikes 01–03 (migrations, policy → SQL, RLS) → ADR-0007/0008/0009
   - RFC-0002 (files), RFC-0003 (errors & messages) and RFC-0004 (`@strutvane/logs`) drafted
 - **Next:** spikes for the registry compiler, OpenAPI client, three-way merge, Better Auth adapter and UI renderer, then Phase 1 (core, CLI, framework).
-- **npm:** all `@strutvane/*` names are reserved with placeholder versions. Nothing is released yet.
+- **npm:** `@strutvane/{contracts,core,framework,auth,ui,cli,devkit}`, `strutvane` and `create-strutvane` are reserved with placeholder versions. `@strutvane/logs` is not reserved yet. Nothing is released yet.
 
 ## 8. Contributor quick start (human or AI)
 
