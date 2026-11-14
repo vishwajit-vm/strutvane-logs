@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 // @ts-check
 // Managed by strutvane-tooling (canonical/.github/scripts/publish-if-new.mjs). Do not edit in
-// package repos. See ADR-0016: "version on main, CI publishes what's new".
+// package repos. See ADR-0016 ("version on main, CI publishes what's new") and ADR-0018 (staged
+// publishing).
 //
-// Publishes this repo's package to npm only if its exact version isn't on the registry yet.
-// Safe to re-run (idempotent). Uses npm trusted publishing (OIDC) with provenance; no tokens.
+// STAGES this repo's package on npm (`npm stage publish`) only if its exact version is neither
+// published nor already staged. A maintainer then approves the staged version on npmjs.com with
+// 2FA, so a CI run alone can never make a version live. Safe to re-run (idempotent). Uses npm
+// trusted publishing (OIDC) with provenance; no tokens.
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -47,19 +50,72 @@ export function compareStable(/** @type {string} */ a, /** @type {string} */ b) 
 
 /**
  * Decide what to do. Pure: takes the registry state as input. Exported for tests.
- * @param {{ version: string, published: readonly string[], latest: string | undefined }} input
- * @returns {{ action: 'skip', reason: string } | { action: 'publish', tag: string }}
+ * @param {{ version: string, published: readonly string[], latest: string | undefined, staged?: readonly string[] }} input
+ * @returns {{ action: 'skip', reason: string } | { action: 'stage', tag: string }}
  */
-export function decide({ version, published, latest }) {
+export function decide({ version, published, latest, staged = [] }) {
   const tag = distTagFor(version)
   if (published.includes(version)) return { action: 'skip', reason: `${version} is already on npm` }
+  if (staged.includes(version)) {
+    return { action: 'skip', reason: `${version} is already staged and waiting for approval` }
+  }
   if (tag === 'latest' && latest && !latest.includes('-') && compareStable(version, latest) < 0) {
     throw new Error(`refusing to publish ${version} as latest: a higher latest (${latest}) exists`)
   }
-  return { action: 'publish', tag }
+  return { action: 'stage', tag }
+}
+
+/**
+ * Collect the versions of `name` found in `npm stage list --json` output. The exact JSON shape is
+ * not part of a documented contract yet, so this walks any nesting and keeps every object that has
+ * a string `version` (and, when present, a matching `name`). Exported for tests.
+ * @param {unknown} data
+ * @param {string} name
+ * @returns {string[]}
+ */
+export function stagedVersions(data, name) {
+  /** @type {string[]} */
+  const found = []
+  const walk = (/** @type {unknown} */ node) => {
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item)
+      return
+    }
+    if (node === null || typeof node !== 'object') return
+    const rec = /** @type {Record<string, unknown>} */ (node)
+    const recName = rec['name'] ?? rec['package']
+    if (typeof rec['version'] === 'string' && (recName === undefined || recName === name)) {
+      found.push(rec['version'])
+    }
+    for (const value of Object.values(rec)) if (value && typeof value === 'object') walk(value)
+  }
+  walk(data)
+  return [...new Set(found)]
 }
 
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+
+/**
+ * Versions of `name` already staged. If the list can't be read (e.g. the registry needs a login
+ * for it), return `[]` with a warning: staging then either succeeds or fails loudly, and never
+ * makes anything live, because approval on npmjs.com is still required.
+ */
+function stagedState(/** @type {string} */ name) {
+  const r = spawnSync(npm, ['stage', 'list', name, '--json'], {
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+  })
+  if (r.status !== 0) {
+    process.stderr.write(`warning: could not list staged versions: ${r.stderr.trim()}\n`)
+    return []
+  }
+  try {
+    return stagedVersions(JSON.parse(r.stdout || '[]'), name)
+  } catch {
+    process.stderr.write('warning: could not parse `npm stage list --json` output\n')
+    return []
+  }
+}
 
 /** Read registry state for a package. A package that was never published yields empty state. */
 function registryState(/** @type {string} */ name) {
@@ -86,18 +142,25 @@ function main() {
     process.stdout.write(`${pkg.name} is private, nothing to publish.\n`)
     return
   }
-  const decision = decide({ version: pkg.version, ...registryState(pkg.name) })
+  const decision = decide({
+    version: pkg.version,
+    ...registryState(pkg.name),
+    staged: stagedState(pkg.name),
+  })
   if (decision.action === 'skip') {
     process.stdout.write(`skip: ${decision.reason}\n`)
     return
   }
-  process.stdout.write(`publishing ${pkg.name}@${pkg.version} with tag "${decision.tag}"\n`)
+  process.stdout.write(`staging ${pkg.name}@${pkg.version} with tag "${decision.tag}"\n`)
   const r = spawnSync(
     npm,
-    ['publish', '--access', 'public', '--provenance', '--tag', decision.tag],
+    ['stage', 'publish', '--access', 'public', '--provenance', '--tag', decision.tag],
     { stdio: 'inherit', shell: process.platform === 'win32' },
   )
   process.exitCode = r.status ?? 1
+  if (r.status === 0) {
+    process.stdout.write('staged. Approve it on npmjs.com to make it live.\n')
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

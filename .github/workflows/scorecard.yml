@@ -1,0 +1,41 @@
+# Managed by strutvane-tooling (canonical/.github/workflows/scorecard.yml). Do not edit in package repos.
+#
+# OpenSSF Scorecard: weekly supply-chain security check (pinned actions, token permissions, branch
+# protection, dependency updates, SAST, …). Results appear under Security → Code scanning and as a
+# public score users can check. Part of the continuous VAPT program (docs/13-testing-strategy.md §14).
+name: Scorecard
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  analysis:
+    if: github.repository_owner == 'vishwajit-vm'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      security-events: write # upload results to code scanning
+      id-token: write # publish results to the public Scorecard API
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run Scorecard
+        uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Upload to code scanning
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: results.sarif
