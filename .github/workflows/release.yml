@@ -4,13 +4,15 @@
 # Release flow (ADR-0016, "version on main, CI publishes what's new"; ADR-0018, staged publishing):
 #   1. Contributors add changesets. A maintainer runs `changeset version` and commits
 #      `chore(release): <name>@<version>` on main.
-#   2. On every push to main, this workflow runs the full quality gate, then STAGES the version in
-#      package.json ONLY if it's neither on npm nor already staged (idempotent). The dist-tag comes
+#   2. On every push to main, this workflow runs the full quality gate, then STAGES each package's
+#      version ONLY if it's neither on npm nor already staged (idempotent). The packages are the
+#      repo root, or, when the root package.json is private, every non-private package listed in
+#      pnpm-workspace.yaml, staged from its own folder in dependency order. The dist-tag comes
 #      from the version: x.y.z → latest, x.y.z-next.N → next, x.y.z-canary.N → canary.
 #   3. A maintainer approves the staged version on npmjs.com with 2FA; only then is it live. A CI run
 #      alone can never release anything.
 #   4. Staging uses npm TRUSTED PUBLISHING (GitHub OIDC) with provenance. No npm token exists.
-# One-time setup per package:
+# One-time setup per published package (each workspace package needs its own):
 #   1. npmjs.com → package → Settings → Trusted Publisher → GitHub Actions: owner `vishwajit-vm`,
 #      repository `<this repo>`, workflow `release.yml`, no environment, and BOTH "Allow npm
 #      publish" and "Allow npm dist-tag" left unticked (staged publishing only).
