@@ -10,6 +10,9 @@
  * - **Compact by default** (spike 09: a ~1 KB record per request costs about a third of request
  *   throughput).
  * - **No query strings or bodies,** which can carry tokens or personal data.
+ * - **The route template when the framework knows it** (`/invoices/:id`). Otherwise the path is
+ *   logged through {@link safePath}: secrets redacted, opaque token-like segments masked, and the
+ *   length capped, so a reset link or signed URL can't put its secret into every request line.
  * - **Level by outcome:** server errors (≥ 500) log at `error`, slow requests at `warn`, everything
  *   else at `info`.
  * - **Health checks are ignored by default** (`/health`, `/ready`), so probes don't flood the logs.
@@ -19,6 +22,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Logger, LogLevel } from '@strutvane/contracts'
 import { log as defaultLogger } from '../default.ts'
+import { REDACTED, redactString } from '../redact.ts'
 
 /** Options shared by every request-logging adapter. */
 export interface RequestLoggingOptions {
@@ -91,6 +95,60 @@ export function pathOf(url: string): string {
   } catch {
     return '/'
   }
+}
+
+/** Longest path written to a request line; longer paths are cut and marked with `…`. */
+export const MAX_LOGGED_PATH_LENGTH = 200
+
+const TOKEN_CHARS = /^[A-Za-z0-9_~=+-]{20,}$/
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/** Character class for the randomness check: 0 lowercase, 1 uppercase, 2 digit, -1 separator. */
+const charClass = (c: number): number =>
+  c >= 97 && c <= 122 ? 0 : c >= 65 && c <= 90 ? 1 : c >= 48 && c <= 57 ? 2 : -1
+
+/**
+ * Does a path segment look like an opaque token (reset or invite token, signed id, API key)? At
+ * least 20 URL-safe characters (no dots, so file names never match) whose neighbouring characters
+ * switch between lowercase, uppercase and digits often, as random hex, base32 and base64 do (about
+ * every other character) and words, slugs and dates don't. UUIDs are record ids, not secrets, and
+ * are kept so request lines stay useful.
+ */
+function looksOpaque(segment: string): boolean {
+  if (!TOKEN_CHARS.test(segment) || UUID.test(segment)) return false
+  let pairs = 0
+  let changes = 0
+  for (let i = 1; i < segment.length; i++) {
+    const a = charClass(segment.charCodeAt(i - 1))
+    const b = charClass(segment.charCodeAt(i))
+    if (a === -1 || b === -1) continue
+    pairs++
+    if (a !== b) changes++
+  }
+  return pairs > 0 && changes / pairs >= 0.2
+}
+
+/**
+ * Make a raw path (no query string) safe to log when no route template is known: built-in secret
+ * patterns are redacted, token-like segments become `[REDACTED]`, and the result is capped at
+ * {@link MAX_LOGGED_PATH_LENGTH} characters. Never throws.
+ *
+ * @example
+ * safePath('/password/reset/9f8e7d6c5b4a39281706f5e4d3c2b1a0') // '/password/reset/[REDACTED]'
+ */
+export function safePath(path: string): string {
+  const masked = path
+    .split('/')
+    .map((segment) => (looksOpaque(segment) ? REDACTED : segment))
+    .join('/')
+  const clean = redactString(masked)
+  return clean.length > MAX_LOGGED_PATH_LENGTH
+    ? `${clean.slice(0, MAX_LOGGED_PATH_LENGTH)}…`
+    : clean
+}
+
+/** The path of `url`, made safe to log with {@link safePath}. */
+export function loggedPath(url: string): string {
+  return safePath(pathOf(url))
 }
 
 /** The level for a finished request. */

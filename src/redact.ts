@@ -9,16 +9,23 @@
  *    - throwing getters and Proxies
  *    - huge strings, arrays and objects
  * 2. **Redaction before storage** (RFC-0004 §6):
- *    - *By key:* any key whose normalised name contains a sensitive word (`password`, `token`, …),
- *      at any depth, becomes `[REDACTED]`. False positives (e.g. `tokenCount`) are preferred over
- *      leaks.
+ *    - *By key:* any key whose normalised name contains a sensitive fragment (`password`,
+ *      `token`, `passphrase`, `signature`, `totp`, `cvv`, …) or one of the short whole words (`pin`,
+ *      `ssn`, `otp`, `sid`, `sig`, …), at any depth, becomes `[REDACTED]`. The lists and the
+ *      matching rules come from `@strutvane/core` (`DEFAULT_SENSITIVE_KEYS`,
+ *      `DEFAULT_SENSITIVE_WORDS`), so core's fallback logger hides exactly the same keys. False
+ *      positives (e.g. `tokenCount`) are preferred over leaks.
  *    - *By pattern,* inside every string including messages:
  *      - JWTs
  *      - Bearer/Basic credentials
  *      - credentials in URLs
+ *      - secret query parameters (`?token=…`, `&sig=…`, `#access_token=…`)
+ *      - well-known prefixed API keys (`sk_live_…`, `ghp_…`, `AKIA…`, `xoxb-…`, …)
  *      - PEM private keys
  *      - Luhn-valid card numbers
- *    - Custom keys and patterns can be added.
+ *    - *Card numbers stored as numbers* (13–19 digit integers or BigInts that pass the Luhn check).
+ *    - Custom keys and patterns can be added; {@link registerSensitiveKeys} adds keys at runtime
+ *      for every logger in the process (e.g. model fields marked `sensitive` or `hidden`).
  *
  * Errors are serialised to the contracts' `LogError` shape: `name`, `message`, `stack`, `code`,
  * `cause`.
@@ -26,8 +33,25 @@
  * @module
  */
 
+import {
+  DEFAULT_SENSITIVE_KEYS,
+  DEFAULT_SENSITIVE_WORDS,
+  normalizeSensitiveKey,
+  registerSensitiveKeys,
+  sensitiveKeyMatcher,
+} from '@strutvane/core'
+
+export { registerSensitiveKeys }
+
 /** The built-in pattern rules. Each one is proven necessary by a tripwire test. */
-export type PatternRule = 'jwt' | 'bearer' | 'urlCredentials' | 'privateKey' | 'pan'
+export type PatternRule =
+  | 'jwt'
+  | 'bearer'
+  | 'urlCredentials'
+  | 'queryString'
+  | 'apiKey'
+  | 'privateKey'
+  | 'pan'
 
 /** Sanitiser settings. */
 export interface SanitizeOptions {
@@ -61,26 +85,13 @@ export const DEFAULT_SANITIZE: SanitizeOptions = Object.freeze({
 
 /** The replacement for redacted values. */
 export const REDACTED = '[REDACTED]'
+const PAN_REDACTED = '[REDACTED:pan]'
 
-/** Key fragments that mark a value as secret, matched against the normalised key name. */
-const SENSITIVE_KEY_FRAGMENTS: readonly string[] = [
-  'password',
-  'passwd',
-  'pwd',
-  'secret',
-  'token',
-  'authorization',
-  'cookie',
-  'apikey',
-  'privatekey',
-  'credential',
-  'sessionid',
-]
-
-/** Normalise a key for matching: lowercase, without `-` and `_` (so api_key, api-key, apiKey match). */
-export function normaliseKey(key: string): string {
-  return key.toLowerCase().replace(/[-_]/g, '')
-}
+/**
+ * Normalise a key for matching: lowercase, without `-`, `_` and whitespace (so `api_key`,
+ * `api-key` and `apiKey` match). The same function core's logger uses.
+ */
+export const normaliseKey: (key: string) => string = normalizeSensitiveKey
 
 interface PatternDef {
   readonly rule: PatternRule
@@ -113,6 +124,20 @@ const PATTERNS: readonly PatternDef[] = [
     re: /([a-z][a-z0-9+.-]*:\/\/)([^\s:@/]+):([^\s@/]+)@/gi,
     replace: (m) => m.replace(/:([^:@]+)@$/, `:${REDACTED}@`),
   },
+  // Secret query parameters inside any text: ?token=…, &X-Amz-Signature=…, #access_token=…
+  // The name may carry a prefix (api_key, client_secret, refresh_token); only the value is hidden.
+  {
+    rule: 'queryString',
+    re: /([?&#;](?:[a-z0-9]+[_.-])*(?:token|signature|sig|key|apikey|code|password|passwd|pwd|passphrase|secret|credentials?|otp|totp|mfa|pin|jwt|sid|session|sessionid|auth))=([^&#\s"'<>]+)/gi,
+    replace: (m) => `${m.slice(0, m.indexOf('=') + 1)}${REDACTED}`,
+  },
+  // Well-known API keys recognisable by their prefix (Strutvane, Stripe, GitHub, GitLab, npm,
+  // Slack, AWS access key ids, Google API keys). Not glued to a preceding letter or digit.
+  {
+    rule: 'apiKey',
+    re: /(?<![A-Za-z0-9])(?:(?:sv|sk|rk)_(?:live|test)_[A-Za-z0-9_-]{8,}|whsec_[A-Za-z0-9+/=]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{30,}|xox[abeoprs]-[A-Za-z0-9-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Z0-9])|AIza[0-9A-Za-z_-]{35})/g,
+    replace: '[REDACTED:api-key]',
+  },
   // Card numbers: 13–19 digits (optional single spaces/dashes), not glued to other digits, Luhn-valid.
   {
     rule: 'pan',
@@ -138,6 +163,21 @@ export function luhnValid(digits: string): boolean {
   return sum % 10 === 0
 }
 
+/**
+ * Is this integer (a number or BigInt) probably a card number? 13–19 digits and Luhn-valid.
+ *
+ * Integers starting with `1` are excluded on purpose: epoch timestamps in milliseconds,
+ * microseconds and nanoseconds (13, 16 and 19 digits) all start with `1` until 2033, and one in ten
+ * would pass the Luhn check, so treating them as cards would hide ordinary timing data. No major
+ * card network issues numbers starting with `1`.
+ */
+export function looksLikeCardNumber(value: number | bigint): boolean {
+  if (typeof value === 'number' && !Number.isInteger(value)) return false
+  if (value < 0) return false
+  const digits = typeof value === 'bigint' ? value.toString() : value.toFixed(0)
+  return digits.length >= 13 && digits.length <= 19 && digits[0] !== '1' && luhnValid(digits)
+}
+
 /** Make sure a custom pattern is global, so every occurrence is replaced. */
 function asGlobal(re: RegExp): RegExp {
   return re.global ? re : new RegExp(re.source, `${re.flags}g`)
@@ -154,9 +194,10 @@ export function redactString(
   options: Pick<SanitizeOptions, 'disable' | 'extraPatterns'> = DEFAULT_SANITIZE,
 ): string {
   let out = value
-  // Short strings can't contain the long patterns; skip the regexes for them (hot path).
+  // Short strings can't contain the long patterns; skip the regexes for them (hot path). A short
+  // query parameter (`?pin=1234`) still needs the query-string rule, hence the `=` check.
   const short = out.length < 13
-  if (!short || out.includes('eyJ') || out.includes('://')) {
+  if (!short || out.includes('eyJ') || out.includes('://') || out.includes('=')) {
     for (const p of PATTERNS) {
       if (options.disable.has(p.rule)) continue
       p.re.lastIndex = 0
@@ -191,18 +232,13 @@ export type Sanitizer = (value: unknown) => unknown
 /** Create a sanitiser bound to `options` (merged over {@link DEFAULT_SANITIZE}). */
 export function createSanitizer(options: Partial<SanitizeOptions> = {}): Sanitizer {
   const o: SanitizeOptions = { ...DEFAULT_SANITIZE, ...options }
-  const fragments = [...SENSITIVE_KEY_FRAGMENTS, ...o.extraKeys.map(normaliseKey)]
+  // Core's matcher: the shared key lists, whole-word rules, runtime-registered keys and a bounded
+  // per-key cache (reset whenever keys are registered).
+  const isSensitiveKey = sensitiveKeyMatcher([...DEFAULT_SENSITIVE_KEYS, ...o.extraKeys], {
+    words: DEFAULT_SENSITIVE_WORDS,
+  })
   const extraPatterns = o.extraPatterns.map(asGlobal)
-  const keyCache = new Map<string, boolean>()
-  const isSensitiveKey = (key: string): boolean => {
-    let hit = keyCache.get(key)
-    if (hit === undefined) {
-      const n = normaliseKey(key)
-      hit = fragments.some((f) => n.includes(f))
-      if (keyCache.size < 10_000) keyCache.set(key, hit)
-    }
-    return hit
-  }
+  const redactPan = o.redact && !o.disable.has('pan')
 
   const str = (s: string): string => {
     const cut =
@@ -217,11 +253,13 @@ export function createSanitizer(options: Partial<SanitizeOptions> = {}): Sanitiz
       case 'string':
         return str(value)
       case 'number':
-        return Number.isFinite(value) ? value : String(value)
+        if (!Number.isFinite(value)) return String(value)
+        // Cheap range check first: only integers of 13+ digits can be card numbers (hot path).
+        return redactPan && value >= 1e12 && looksLikeCardNumber(value) ? PAN_REDACTED : value
       case 'boolean':
         return value
       case 'bigint':
-        return value.toString()
+        return redactPan && looksLikeCardNumber(value) ? PAN_REDACTED : value.toString()
       case 'undefined':
         return undefined
       case 'symbol':

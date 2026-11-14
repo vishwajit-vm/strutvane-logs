@@ -178,11 +178,13 @@ const SCRIPT = `
       body.files.forEach(function (f) { if (days.indexOf(f.day) === -1) days.push(f.day); });
       if (!days.length) list.appendChild(el('li', null, 'No log files yet.'));
       days.forEach(function (day) {
-        var size = body.files.filter(function (f) { return f.day === day; })
-          .reduce(function (n, f) { return n + f.size; }, 0);
+        var parts = body.files.filter(function (f) { return f.day === day; });
         var li = el('li');
         li.appendChild(el('strong', null, day));
-        li.appendChild(el('span', 'rid', (size / 1024).toFixed(1) + ' KB'));
+        if (!body.scoped) {
+          var size = parts.reduce(function (n, f) { return n + f.size; }, 0);
+          li.appendChild(el('span', 'rid', (size / 1024).toFixed(1) + ' KB'));
+        }
         ['ndjson', 'csv'].forEach(function (format) {
           var a = el('a', null, 'Download ' + format.toUpperCase());
           a.href = base + '/api/download?day=' + encodeURIComponent(day) + '&format=' + format;

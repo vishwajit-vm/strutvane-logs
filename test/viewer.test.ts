@@ -38,7 +38,7 @@ import { sleep, tempDir } from './helpers.ts'
 
 const TOKEN = 'correct-horse-battery-staple'
 const NOW = Date.parse('2026-11-14T12:00:00.000Z')
-const BASE = 'http://app.test/_strutvane/logs'
+const BASE = 'http://localhost:3000/_strutvane/logs'
 const cleanups: Array<() => void> = []
 afterEach(() => {
   for (const c of cleanups.splice(0)) c()
@@ -630,9 +630,12 @@ describe('clear', () => {
     const dir = fixture()
     const events: ViewerAuditEvent[] = []
     const v = viewer(dir, { onAudit: (e) => events.push(e) })
-    const res = await v.fetch(post({ 'x-csrf-token': await csrf(v), origin: 'http://app.test' }), {
-      ip: '::1',
-    })
+    const res = await v.fetch(
+      post({ 'x-csrf-token': await csrf(v), origin: 'http://localhost:3000' }),
+      {
+        ip: '::1',
+      },
+    )
     expect(res.status).toBe(200)
     expect((await body(res)).deleted).toEqual(['2026-11-13.ndjson'])
     expect(readdirSync(dir).sort()).toEqual(['2026-11-14.ndjson', 'secrets.env'])

@@ -7,7 +7,11 @@
  * 1. **IP allow-list** (optional, all modes): a client outside it gets a 404.
  * 2. **`authorize(request)`** (if provided) is the only rule. `true` allows; `false` or a thrown
  *    error hides the viewer (404). Use it to plug in your own auth (e.g. "admins only").
- * 3. **Local development** (`APP_ENV=local`): allowed, so `pnpm dev` just works.
+ * 3. **Local development** (`APP_ENV=local`): allowed, so `pnpm dev` just works, but only when the
+ *    request is addressed to a loopback host (`localhost`, `127.0.0.1` or `[::1]`, any port) in
+ *    both the `Host` header and the URL. A page on another site can make a browser send requests
+ *    to a local server under its own host name (DNS rebinding); those carry a foreign `Host` and
+ *    get a 404.
  * 4. **Viewer token** (`LOGS_VIEWER_TOKEN`, at least 16 characters): allowed with
  *    `Authorization: Bearer <token>` or a signed session cookie. Opening the page once with
  *    `?token=<token>` sets the cookie (HttpOnly, SameSite=Strict, 8 h) and redirects to a clean URL.
@@ -95,6 +99,32 @@ export function ipAllowed(list: BlockList, ip: string | undefined): boolean {
   return list.check(plain, family === 4 ? 'ipv4' : 'ipv6')
 }
 
+/** `localhost`, `127.0.0.1` or `[::1]`, with an optional port (`:1`–`:65535`). Nothing else. */
+const LOOPBACK_HOST = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::(\d{1,5}))?$/i
+
+/**
+ * Is `host` (a `Host` header or URL host) exactly a loopback name with an optional port? Lookalikes
+ * such as `localhost.evil.test`, `127.0.0.1.nip.io` or a trailing dot are rejected.
+ */
+export function isLoopbackHost(host: string | null | undefined): boolean {
+  if (!host) return false
+  const match = LOOPBACK_HOST.exec(host.trim())
+  if (!match) return false
+  const port = match[1]
+  return port === undefined || (Number(port) >= 1 && Number(port) <= 65_535)
+}
+
+/** Is the request addressed to a loopback host, in its `Host` header (when sent) and its URL? */
+export function addressedToLoopback(request: Request): boolean {
+  const header = request.headers.get('host')
+  if (header !== null && !isLoopbackHost(header)) return false
+  try {
+    return isLoopbackHost(new URL(request.url).host)
+  } catch {
+    return false
+  }
+}
+
 /** Validate the configured token. A token that's too short is a configuration error. */
 export function validateToken(token: string | undefined, source: string): string | undefined {
   if (token === undefined || token === '') return undefined
@@ -180,7 +210,9 @@ export async function decideAccess(
     }
   }
 
-  if (policy.local) return { kind: 'allow', mode: 'local' }
+  if (policy.local) {
+    return addressedToLoopback(request) ? { kind: 'allow', mode: 'local' } : { kind: 'hidden' }
+  }
 
   const token = policy.token
   if (!token) return { kind: 'hidden' }

@@ -7,10 +7,10 @@
  * | Method | Path | Purpose |
  * |---|---|---|
  * | GET | `/` | The viewer page |
- * | GET | `/api/files` | Log files, newest first |
+ * | GET | `/api/files` | Log files, newest first (days only for scoped viewers) |
  * | GET | `/api/records` | Search records, newest first, paged by `cursor` |
- * | GET | `/api/download?day=&format=ndjson\|csv` | Download one day |
- * | GET | `/api/tail` | Live tail (Server-Sent Events) |
+ * | GET | `/api/download?day=&format=ndjson\|csv` | Download one day (GET only, no HEAD) |
+ * | GET | `/api/tail` | Live tail (Server-Sent Events; GET only, no HEAD) |
  * | GET | `/api/session` | CSRF token for state-changing calls |
  * | POST | `/api/clear` | Delete old files (never today's) |
  *
@@ -80,7 +80,10 @@ export interface ViewerOptions {
   ) => RecordFilter | undefined | Promise<RecordFilter | undefined>
   /** Called after a clear or download, e.g. to write an audit log. Errors are ignored. */
   readonly onAudit?: (event: ViewerAuditEvent) => void
-  /** Maximum concurrent live tails. Default: 5. */
+  /**
+   * Maximum concurrent live tails. Default: 5. A slot is released on every way a tail can end
+   * (abort, cancel, a consumer that stops reading, the one-hour lifetime), see `createTailStream`.
+   */
   readonly maxTails?: number
   /** Live tail poll interval. Default: 1,000 ms. */
   readonly tailPollMs?: number
@@ -262,6 +265,17 @@ export function createViewerHandler(options: ViewerOptions = {}): ViewerHandler 
     })
   }
 
+  /**
+   * The file list. A scoped viewer (e.g. one tenant) sees only which days exist: file names, sizes
+   * and modification times describe everyone's activity, not just its own records.
+   */
+  const files = async (scoped: boolean): Promise<Response> => {
+    const all = await describeFiles(dir)
+    if (!scoped) return json(200, { files: all })
+    const days = [...new Set(all.map((f) => f.day))]
+    return json(200, { files: days.map((day) => ({ day })), scoped: true })
+  }
+
   const records = async (
     url: URL,
     query: RecordQuery,
@@ -348,23 +362,33 @@ export function createViewerHandler(options: ViewerOptions = {}): ViewerHandler 
       })
     }
     activeTails++
-    const stream = createTailStream({
-      dir,
-      query,
-      scope,
-      signal: request.signal,
-      now,
-      ...(options.tailPollMs === undefined ? {} : { pollMs: options.tailPollMs }),
-      ...(options.heartbeatMs === undefined ? {} : { heartbeatMs: options.heartbeatMs }),
-      onClose: () => {
-        activeTails--
-      },
-    })
-    return respond(200, stream, {
-      'content-type': 'text/event-stream; charset=utf-8',
-      'cache-control': 'no-store, no-transform',
-      'x-accel-buffering': 'no',
-    })
+    // Release exactly once, whichever path ends the tail (including a throw right here).
+    let released = false
+    const release = (): void => {
+      if (released) return
+      released = true
+      activeTails--
+    }
+    try {
+      const stream = createTailStream({
+        dir,
+        query,
+        scope,
+        signal: request.signal,
+        now,
+        ...(options.tailPollMs === undefined ? {} : { pollMs: options.tailPollMs }),
+        ...(options.heartbeatMs === undefined ? {} : { heartbeatMs: options.heartbeatMs }),
+        onClose: release,
+      })
+      return respond(200, stream, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-store, no-transform',
+        'x-accel-buffering': 'no',
+      })
+    } catch (error) {
+      release()
+      throw error
+    }
   }
 
   const clear = async (
@@ -462,15 +486,17 @@ export function createViewerHandler(options: ViewerOptions = {}): ViewerHandler 
       '/api/clear',
     ]
     if (!known.includes(sub)) return notFound()
-    if (sub === '/api/clear' ? request.method !== 'POST' : !isGet) {
-      return fail(405, 'Method not allowed', undefined, {
-        allow: sub === '/api/clear' ? 'POST' : 'GET, HEAD',
-      })
-    }
+    // Streaming routes hold resources (a tail slot, file handles, an audit entry) until the body
+    // is consumed; a HEAD response has no body to consume, so they accept GET only.
+    const getOnly = sub === '/api/tail' || sub === '/api/download'
+    const allowed = sub === '/api/clear' ? 'POST' : getOnly ? 'GET' : 'GET, HEAD'
+    const methodOk =
+      sub === '/api/clear' ? request.method === 'POST' : getOnly ? request.method === 'GET' : isGet
+    if (!methodOk) return fail(405, 'Method not allowed', undefined, { allow: allowed })
 
     if (isPage) return page()
     if (sub === '/api/session') return json(200, { csrfToken })
-    if (sub === '/api/files') return json(200, { files: await describeFiles(dir) })
+    if (sub === '/api/files') return files(scope !== undefined)
     if (sub === '/api/clear') return clear(request, url, scope !== undefined, info.ip)
 
     let query: RecordQuery

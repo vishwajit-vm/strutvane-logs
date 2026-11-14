@@ -20,9 +20,9 @@ Strutvane Logs is part of **[Strutvane](https://github.com/vishwajit-vm/strutvan
 
 - **Zero configuration.** `log.info('Invoice sent', { invoiceId })` just works. Records are one JSON object per line, and request context (requestId, traceId, tenant, actor) is added automatically.
 - **Never slows or crashes your app.** Log calls are synchronous, cheap and never throw. Writing happens off the hot path in batches. If the disk fails, logs fall back to stderr (with exactly one warning) and recover by themselves.
-- **Secrets never reach the disk.** Passwords, tokens, cookies, authorization headers, API keys, JWTs, credentials in URLs, private keys and card numbers are redacted before anything is written.
+- **Secrets never reach the disk.** Passwords, passphrases, tokens, cookies, sessions, authorization headers, API keys, signatures, one-time and MFA codes, PINs, card data, JWTs, credentials in URLs, secret query parameters (`?token=`, `&sig=`, `#access_token=`), well-known prefixed keys (`sk_live_…`, `ghp_…`, `AKIA…`, `xoxb-…`), private keys and card numbers (in text or stored as numbers) are redacted before anything is written. Add your own keys with `extraKeys`, or at runtime for every logger in the process with `registerSensitiveKeys(['taxNumber'])`.
 - **Safe storage.** Daily files with a size cap per file, retention (60 days by default), one file per process when several processes log, and a guaranteed flush on shutdown.
-- **Request logging.** One compact line per request: method, route template, status, duration and size. Query strings and bodies are never logged.
+- **Request logging.** One compact line per request: method, route template, status, duration and size. Query strings and bodies are never logged. When the route template isn't known, the path is logged with secrets redacted, token-like segments masked and its length capped.
 - **A built-in viewer** at `/_strutvane/logs`: search, filters, live tail, download (NDJSON or CSV) and clearing old files. It is **closed by default**: open in local development, token- or callback-protected elsewhere, and invisible (404) in production unless you set it up.
 
 ## Quick start
@@ -108,7 +108,7 @@ Every request gets one line like `GET /invoices/:id 200` with `{ method, route, 
 
 | Situation | Access |
 |---|---|
-| `APP_ENV=local` | Open, so `pnpm dev` just works |
+| `APP_ENV=local` | Open, so `pnpm dev` just works, for requests to `localhost`, `127.0.0.1` or `[::1]` only (any other `Host` gets a 404, which blocks DNS-rebinding pages) |
 | `LOGS_VIEWER_TOKEN` set (16+ characters) | `Authorization: Bearer <token>`, or open `/_strutvane/logs?token=<token>` once in a browser (sets an 8-hour, HttpOnly, SameSite=Strict cookie and redirects to a clean URL) |
 | You pass `authorize: (request) => boolean` | Only your rule decides (for example "admins only") |
 | Anything else (e.g. production with nothing set) | **404**, as if the viewer didn't exist |
@@ -171,14 +171,17 @@ const log = createLogger({
 
 In a Strutvane app `create-strutvane` registers `@strutvane/logs/provider` for you. It reads
 `config/logging.ts` (`level`, `format`, `driver`, `path` relative to the project root, `retentionDays`,
-`maxDailySize`, `requests.ignore`, `requests.slowThresholdMs`, `viewer.enabled/path/token`), and never imports
-the framework: request logging and the viewer ride on the framework's core hooks.
+`maxDailySize`, `requests.ignore`, `requests.slowThresholdMs`, `viewer.enabled/path/token`, and
+`viewer.authorize/ipAllowList/scopeRecords/onAudit`), and never imports the framework: request logging
+and the viewer ride on the framework's core hooks. `createLogsProvider({ viewer: { authorize } })`
+sets the same access rules in code (and wins over the config file). The IP allow-list is checked
+against the hook's `clientAddress` (the socket peer, never a forwarded header); without one it denies.
 
 ## Security, in short
 
 - **Redaction before storage**, by key (at any depth) and by pattern, with tripwire tests proving every rule matters.
 - **Log injection is impossible**: every record is exactly one line (newlines and U+2028/U+2029 are escaped), and incoming request ids are validated.
-- **The viewer** renders log text with `textContent` only, sends a strict CSP with a per-response nonce, checks a CSRF token and `Origin` before clearing, never deletes today's files, validates every parameter (no path traversal), re-redacts records on the way out, limits concurrent live tails and bounds the work per search.
+- **The viewer** renders log text with `textContent` only, sends a strict CSP with a per-response nonce, checks a CSRF token and `Origin` before clearing, never deletes today's files, validates every parameter (no path traversal), re-redacts records on the way out, limits concurrent live tails (a slot is freed however a tail ends, including clients that vanish without closing; tails accept GET only) and bounds the work per search (files are read backwards in fixed-size chunks, never whole). Scoped viewers see which days exist, not file names or sizes.
 
 Report vulnerabilities privately: see [SECURITY.md](SECURITY.md).
 

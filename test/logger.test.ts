@@ -104,31 +104,14 @@ describe('logging calls', () => {
   test('a log call does not block: writing happens later, in batches', async () => {
     const t = memoryTransport({ delayMs: 5 })
     const log = createPipelineLogger({ transport: t, maxBatchBytes: 4 * 1024 })
-    const started = performance.now()
     for (let i = 0; i < 5_000; i++) log.info('fast', { i })
-    const elapsed = performance.now() - started
-    expect(t.batches).toHaveLength(0) // nothing written synchronously
-    expect(elapsed).toBeLessThan(1_000)
+    // Nothing is written synchronously. (The time per call is a budget in logger.perf.test.ts,
+    // outside the gate, because wall-clock timings depend on machine load.)
+    expect(t.batches).toHaveLength(0)
     await log.drain(10_000)
     expect(t.records()).toHaveLength(5_000)
     expect(t.batches.length).toBeGreaterThan(1)
     expect(t.records().map((r) => (r.fields as { i: number }).i)).toEqual([...Array(5_000).keys()])
-  })
-
-  test('throughput sanity: 50k records/s or more through the pipeline', async () => {
-    const t = memoryTransport()
-    const log = createPipelineLogger({
-      transport: t,
-      queue: { maxRecords: 200_000, maxBytes: 256 * 1024 * 1024 },
-    })
-    const n = 50_000
-    const started = performance.now()
-    for (let i = 0; i < n; i++)
-      log.info('request handled', { method: 'GET', route: '/api/v1/invoices', status: 200, i })
-    await log.drain(30_000)
-    const perSecond = n / ((performance.now() - started) / 1000)
-    expect(log.stats().written).toBe(n)
-    expect(perSecond).toBeGreaterThan(50_000)
   })
 
   test('validates numeric options', () => {

@@ -13,7 +13,12 @@
  */
 import type { ErrorRequestHandler, Request, RequestHandler } from 'express'
 import { runWithLogContext } from '../context.ts'
-import { pathOf, type RequestLoggingOptions, resolveRequestLogging } from '../http/core.ts'
+import {
+  loggedPath,
+  pathOf,
+  type RequestLoggingOptions,
+  resolveRequestLogging,
+} from '../http/core.ts'
 import { createViewerHandler, type ViewerOptions } from '../viewer/handler.ts'
 import { toNodeHandler, trackNodeRequest } from './node.ts'
 
@@ -27,7 +32,7 @@ function routeOf(req: Request): string {
   const base: unknown = req.baseUrl
   return typeof routePath === 'string'
     ? `${typeof base === 'string' ? base : ''}${routePath}`
-    : pathOf(req.originalUrl || req.url)
+    : loggedPath(req.originalUrl || req.url)
 }
 
 /** Express middleware that logs every request and runs the rest of the chain inside a log context. */

@@ -13,9 +13,11 @@
  */
 export type { AccessDecision, AccessPolicy, AuthorizeFn } from './access.ts'
 export {
+  addressedToLoopback,
   buildAllowList,
   decideAccess,
   ipAllowed,
+  isLoopbackHost,
   MIN_TOKEN_LENGTH,
   SESSION_COOKIE,
   SESSION_TTL_MS,
@@ -33,8 +35,14 @@ export type {
   ViewerRequestInfo,
 } from './handler.ts'
 export { createViewerHandler } from './handler.ts'
-export type { Cursor, LogFileInfo, Page, PageOptions } from './store.ts'
-export { decodeCursor, describeFiles, encodeCursor, readPage } from './store.ts'
+export type { Cursor, FileLine, LogFileInfo, Page, PageOptions } from './store.ts'
+export {
+  decodeCursor,
+  describeFiles,
+  encodeCursor,
+  readLinesBackward,
+  readPage,
+} from './store.ts'
 export type { TailOptions } from './tail.ts'
 export { createTailStream } from './tail.ts'
 export { escapeHtml, renderViewerPage } from './ui.ts'

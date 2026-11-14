@@ -10,7 +10,9 @@
  * - **Every record is re-sanitised before it leaves the server,** in case a file was written by
  *   something other than this logger (defence in depth). Searches match the sanitised text, so a
  *   search can't be used to guess a secret character by character.
- * - **Work per request is bounded** (`maxScanLines`), so a search can't pin the CPU.
+ * - **Work per request is bounded** (`maxScanLines`), so a search can't pin the CPU, and files are
+ *   read backwards in fixed-size chunks from the cursor, never whole, so memory stays flat however
+ *   large a file grows. A line longer than any record this logger writes is skipped unread.
  * - **Partial last lines are ignored** (a writer may be mid-append).
  *
  * @module
@@ -39,7 +41,7 @@ export interface LogFileInfo {
   readonly modified: string
 }
 
-/** Where to continue paging: before line index `before` of `file`. */
+/** Where to continue paging: the lines of `file` that start before byte offset `before`. */
 export interface Cursor {
   readonly file: string
   readonly before: number
@@ -148,17 +150,67 @@ export interface Page {
   readonly scanned: number
 }
 
-/** Complete lines of a file (a partial last line, still being written, is dropped). */
-async function completeLines(path: string): Promise<string[]> {
+/** Bytes read per step when scanning a file backwards. */
+const CHUNK_BYTES = 64 * 1024
+/** Lines longer than this are not records this logger wrote (they are capped far lower): skipped. */
+const MAX_LINE_BYTES = 1024 * 1024
+
+/** One complete line and the byte offset where it starts. */
+export interface FileLine {
+  readonly text: string
+  readonly start: number
+}
+
+/**
+ * Yield the complete lines of a file that start before byte `end` (default: the file size),
+ * newest first, reading backwards in chunks of `chunkBytes`. Whatever follows the last newline
+ * before `end` is dropped: at the end of the file it is a line still being written. Lines longer
+ * than 1 MiB are skipped without being buffered. A file that disappears or can't be read yields
+ * nothing more.
+ */
+export async function* readLinesBackward(
+  path: string,
+  end?: number,
+  chunkBytes: number = CHUNK_BYTES,
+): AsyncGenerator<FileLine> {
   let handle: Awaited<ReturnType<typeof open>> | undefined
   try {
     handle = await open(path, 'r')
-    const text = await handle.readFile('utf8')
-    const lines = text.split('\n')
-    lines.pop() // either '' after the final newline, or a partial line
-    return lines
+    const size = (await handle.stat()).size
+    let pos = Math.min(end ?? size, size)
+    let tail = Buffer.alloc(0) // bytes of a line whose start hasn't been read yet
+    let oversized = false
+    let first = true // the segment after the last newline is incomplete: drop it
+    while (pos > 0) {
+      const from = Math.max(0, pos - chunkBytes)
+      const chunk = Buffer.alloc(pos - from)
+      let got = 0
+      while (got < chunk.length) {
+        const { bytesRead } = await handle.read(chunk, got, chunk.length - got, from + got)
+        if (bytesRead === 0) return // truncated meanwhile
+        got += bytesRead
+      }
+      const data = tail.length > 0 ? Buffer.concat([chunk, tail]) : chunk
+      let lineEnd = data.length
+      let nl = data.lastIndexOf(0x0a, lineEnd - 1)
+      while (nl !== -1) {
+        if (!first && !oversized && lineEnd - nl - 1 <= MAX_LINE_BYTES)
+          yield { text: data.subarray(nl + 1, lineEnd).toString('utf8'), start: from + nl + 1 }
+        first = false
+        oversized = false
+        lineEnd = nl
+        nl = lineEnd > 0 ? data.lastIndexOf(0x0a, lineEnd - 1) : -1
+      }
+      tail = Buffer.from(data.subarray(0, lineEnd))
+      if (tail.length > MAX_LINE_BYTES) {
+        oversized = true
+        tail = Buffer.alloc(0)
+      }
+      pos = from
+    }
+    if (!first && !oversized && tail.length > 0) yield { text: tail.toString('utf8'), start: 0 }
   } catch {
-    return [] // deleted meanwhile
+    // Deleted or unreadable meanwhile: nothing more from this file.
   } finally {
     await handle?.close().catch(() => undefined)
   }
@@ -181,22 +233,30 @@ export async function readPage(options: PageOptions): Promise<Page> {
   const records: ViewerRecord[] = []
   let scanned = 0
   for (const name of files) {
-    const lines = await completeLines(join(dir, name))
-    const start =
-      cursor && name === cursor.file ? Math.min(cursor.before, lines.length) - 1 : lines.length - 1
-    for (let i = start; i >= 0; i--) {
-      if (scanned >= maxScan)
-        return { records, scanned, nextCursor: encodeCursor({ file: name, before: i + 1 }) }
-      scanned++
-      const clean = cleanLine(lines[i] ?? '', sanitize)
-      if (!clean || !accept(clean, query, scope)) continue
-      records.push(clean.record)
-      if (records.length >= limit) {
-        const more = i > 0 || name !== files[files.length - 1]
-        return more
-          ? { records, scanned, nextCursor: encodeCursor({ file: name, before: i }) }
-          : { records, scanned }
+    const end = cursor && name === cursor.file ? cursor.before : undefined
+    const lines = readLinesBackward(join(dir, name), end)
+    // Start of the line examined last: everything before it is still to do.
+    let resumeAt = end
+    try {
+      for await (const line of lines) {
+        if (scanned >= maxScan) {
+          const before = resumeAt ?? line.start + Buffer.byteLength(line.text) + 1
+          return { records, scanned, nextCursor: encodeCursor({ file: name, before }) }
+        }
+        scanned++
+        resumeAt = line.start
+        const clean = cleanLine(line.text, sanitize)
+        if (!clean || !accept(clean, query, scope)) continue
+        records.push(clean.record)
+        if (records.length >= limit) {
+          const more = line.start > 0 || name !== files[files.length - 1]
+          return more
+            ? { records, scanned, nextCursor: encodeCursor({ file: name, before: line.start }) }
+            : { records, scanned }
+        }
       }
+    } finally {
+      await lines.return(undefined)
     }
   }
   return { records, scanned }

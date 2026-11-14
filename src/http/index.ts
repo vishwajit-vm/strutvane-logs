@@ -13,7 +13,7 @@ import { runWithLogContext } from '../context.ts'
 import {
   type CompletedRequest,
   logCompletedRequest,
-  pathOf,
+  loggedPath,
   type RequestLoggingOptions,
   requestIdFrom,
   resolveRequestLogging,
@@ -24,9 +24,12 @@ export type { CompletedRequest, RequestLoggingOptions, ResolvedRequestLogging } 
 export {
   levelFor,
   logCompletedRequest,
+  loggedPath,
+  MAX_LOGGED_PATH_LENGTH,
   pathOf,
   requestIdFrom,
   resolveRequestLogging,
+  safePath,
   sizeFrom,
 } from './core.ts'
 
@@ -64,7 +67,7 @@ export function createRequestLogger(options: RequestLoggingOptions = {}): WebReq
   return {
     async handle(request: Request, next: WebHandler): Promise<Response> {
       const requestId = requestIdFrom(request.headers.get(resolved.requestIdHeader))
-      const route = pathOf(request.url)
+      const route = loggedPath(request.url)
       const started = performance.now()
       const finish = (info: Omit<CompletedRequest, 'method' | 'route' | 'durationMs'>): void => {
         logCompletedRequest(resolved, {

@@ -16,6 +16,7 @@ import {
   type RequestLoggingOptions,
   requestIdFrom,
   resolveRequestLogging,
+  safePath,
   sizeFrom,
 } from '../http/core.ts'
 import { createViewerHandler, type ViewerOptions } from '../viewer/handler.ts'
@@ -39,11 +40,11 @@ export function requestLogging(options: RequestLoggingOptions = {}): MiddlewareH
     const size = sizeFrom(c.res.headers.get('content-length'))
     logCompletedRequest(resolved, {
       method: c.req.method,
-      // routePath is the matched template (e.g. /invoices/:id); fall back to the plain path.
+      // routePath is the matched template (e.g. /invoices/:id); fall back to the safe path.
       route:
         c.req.routePath && c.req.routePath !== '*' && c.req.routePath !== '/*'
           ? c.req.routePath
-          : c.req.path,
+          : safePath(c.req.path),
       status: thrown !== undefined ? 500 : c.res.status,
       durationMs: performance.now() - started,
       ...(size === undefined ? {} : { size }),

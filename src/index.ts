@@ -46,10 +46,12 @@ export type { PatternRule, SanitizeOptions, Sanitizer } from './redact.ts'
 export {
   createSanitizer,
   DEFAULT_SANITIZE,
+  looksLikeCardNumber,
   luhnValid,
   normaliseKey,
   REDACTED,
   redactString,
+  registerSensitiveKeys,
 } from './redact.ts'
 export { DEFAULT_MAX_RECORD_BYTES, serializeRecord } from './serialize.ts'
 export type { ShutdownOptions } from './shutdown.ts'

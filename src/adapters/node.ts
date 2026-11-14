@@ -14,7 +14,7 @@ import { Readable } from 'node:stream'
 import { runWithLogContext } from '../context.ts'
 import {
   logCompletedRequest,
-  pathOf,
+  loggedPath,
   type RequestLoggingOptions,
   type ResolvedRequestLogging,
   requestIdFrom,
@@ -67,7 +67,7 @@ export function withRequestLogging(
 ): RequestListener {
   const resolved = resolveRequestLogging(options)
   return (req, res) => {
-    const requestId = trackNodeRequest(resolved, req, res, () => pathOf(req.url ?? '/'))
+    const requestId = trackNodeRequest(resolved, req, res, () => loggedPath(req.url ?? '/'))
     runWithLogContext({ requestId }, () => listener(req, res))
   }
 }

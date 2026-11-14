@@ -28,17 +28,28 @@ interface ErrShape {
 }
 const json = (v: unknown): string => JSON.stringify(sanitize(v))
 
+/**
+ * Fake API keys are assembled at runtime from prefix + body, so no secret-shaped literal ever sits
+ * in the source: secret scanners (GitHub push protection and others) would rightly flag one.
+ */
+const fakeKey = (prefix: string, body: string): string => `${prefix}${body}`
+const FAKE_STRIPE_KEY = fakeKey('sk_live_', '51HxAbCdEfGh12345678')
+
 const SECRETS: Record<PatternRule, string> = {
   jwt: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.c2lnbmF0dXJlLXZhbHVl',
   bearer: 'Bearer abcdefghijklmnop1234',
   urlCredentials: 'postgres://app:hunter2secret@db:5432/main',
   privateKey: '-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----',
   pan: '4111 1111 1111 1111',
+  queryString: 'https://app.test/callback?code=q7Zr4Ns9Kp2&state=1',
+  apiKey: FAKE_STRIPE_KEY,
 }
 const LEAK: Record<PatternRule, string> = {
   jwt: 'c2lnbmF0dXJlLXZhbHVl',
   bearer: 'abcdefghijklmnop1234',
   urlCredentials: 'hunter2secret',
+  queryString: 'q7Zr4Ns9Kp2',
+  apiKey: FAKE_STRIPE_KEY,
   privateKey: 'MIIEowIBAAKCAQEA',
   pan: '4111 1111 1111 1111',
 }
@@ -129,6 +140,164 @@ describe('pattern-based redaction', () => {
 
   test('short strings skip the regexes but still get extra patterns', () => {
     expect(redactString('abc', { disable: new Set(), extraPatterns: [/b/g] })).toBe(`a${REDACTED}c`)
+  })
+})
+
+/** A value that must never appear in sanitised output. */
+const CANARY = 'canary-q7Zr4Ns9Kp2'
+
+describe('redaction canaries (keys shared with core)', () => {
+  test.each([
+    'passphrase',
+    'otp',
+    'otpCode',
+    'totpSecret',
+    'mfa_code',
+    'cvv',
+    'cvc2',
+    'ssn',
+    'userSSN',
+    'pin',
+    'cardPin',
+    'signature',
+    'sig',
+    'x-sig',
+    'appkey',
+    'app_key',
+    'sid',
+    'twilio_sid',
+    'recoveryCodes',
+    'backup_code',
+    'salt',
+    'iban',
+    'cardNumber',
+    'accessKey',
+    'signingKey',
+    'encryptionKey',
+    'jwt',
+    'bearer',
+    'session',
+    'csrfToken',
+  ])('%s is redacted at any depth, for strings, numbers and objects', (key) => {
+    const out = JSON.stringify(
+      sanitize({
+        [key]: CANARY,
+        nested: { list: [{ [key]: 987654321 }], deep: { a: { b: { [key]: { v: CANARY } } } } },
+      }),
+    )
+    expect(out).not.toContain(CANARY)
+    expect(out).not.toContain('987654321')
+  })
+
+  test('short words only match whole words, so ordinary keys survive', () => {
+    expect(
+      sanitize({ shipping: 'a', inside: 'b', className: 'c', design: 'd', footprint: 'e' }),
+    ).toEqual({ shipping: 'a', inside: 'b', className: 'c', design: 'd', footprint: 'e' })
+  })
+
+  test('registerSensitiveKeys hides keys in sanitisers that already exist', async () => {
+    const { registerSensitiveKeys } = await import('../src/index.ts')
+    const s = createSanitizer()
+    expect(s({ birthPlace: CANARY })).toEqual({ birthPlace: CANARY })
+    registerSensitiveKeys(['birthPlace'])
+    expect(JSON.stringify(s({ birthPlace: CANARY, owner: { birth_place: CANARY } }))).not.toContain(
+      CANARY,
+    )
+    // Viewer output is re-sanitised with the same rules.
+    expect(JSON.stringify(createSanitizer()({ BIRTHPLACE: CANARY }))).not.toContain(CANARY)
+  })
+})
+
+describe('redaction canaries (patterns)', () => {
+  test.each([
+    ['?token=', 'GET /reset?token=CANARY'],
+    ['&signature=', 'https://cdn.test/f.pdf?x=1&signature=CANARY'],
+    ['&sig=', '/download?id=4&sig=CANARY'],
+    ['?key=', 'https://maps.test/api?key=CANARY'],
+    ['?code=', 'https://app.test/oauth/callback?code=CANARY&state=xyz'],
+    ['&password=', 'login?user=ann&password=CANARY'],
+    ['&secret=', 'hook?secret=CANARY'],
+    ['&access_token=', 'https://api.test/me?fmt=json&access_token=CANARY'],
+    ['&refresh_token=', 'POST /token?refresh_token=CANARY'],
+    ['&client_secret=', '/oauth?client_id=1&client_secret=CANARY'],
+    ['X-Amz-Signature', 'https://s3.test/o?X-Amz-Credential=AK%2F1&X-Amz-Signature=CANARY'],
+    ['#access_token=', 'https://app.test/#access_token=CANARY&expires_in=3600'],
+    ['short ?pin=', '?pin=CANARY'],
+  ])('query parameter %s is hidden, other parameters kept', (_name, text) => {
+    const out = redactString(text.replace('CANARY', CANARY))
+    expect(out).not.toContain(CANARY)
+    expect(out).toContain(REDACTED)
+  })
+
+  test('the parameter name and the other parameters are kept', () => {
+    expect(redactString('/cb?code=abc&state=xyz')).toBe(`/cb?code=${REDACTED}&state=xyz`)
+    expect(redactString('/search?q=keyboard&page=2')).toBe('/search?q=keyboard&page=2')
+    expect(redactString('see ?monkey=1')).toBe('see ?monkey=1')
+  })
+
+  test.each([
+    fakeKey('sv_live_', 'Ab12Cd34Ef56Gh78'),
+    fakeKey('sv_test_', 'Ab12Cd34Ef56Gh78'),
+    fakeKey('sk_live_', '51HxAbCdEfGh12345678'),
+    fakeKey('sk_test_', '51HxAbCdEfGh12345678'),
+    fakeKey('rk_live_', '51HxAbCdEfGh12345678'),
+    fakeKey('whsec_', 'AbCdEfGh1234567890AbCd'),
+    fakeKey('ghp_', 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'),
+    fakeKey('gho_', 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'),
+    fakeKey('github_pat_', '11ABCDEFG0123456789_abcdefghijklmnop'),
+    fakeKey('glpat-', 'A1b2C3d4E5f6G7h8I9j0'),
+    fakeKey('npm_', 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'),
+    fakeKey('xoxb-', '1234567890-abcdefghij'),
+    fakeKey('xoxp-', '1234567890-abcdefghij'),
+    fakeKey('xoxa-', '1234567890-abcdefghij'),
+    fakeKey('AKIA', 'IOSFODNN7EXAMPLE'),
+    fakeKey('ASIA', 'IOSFODNN7EXAMPLE'),
+    fakeKey('AIza', 'SyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q'),
+  ])('prefixed key %s is hidden in text, in nested objects and in error messages', (key) => {
+    expect(redactString(`using ${key} now`)).not.toContain(key)
+    expect(JSON.stringify(sanitize({ a: [{ note: `k=${key}` }] }))).not.toContain(key)
+    expect(JSON.stringify(sanitize(new Error(`bad key ${key}`)))).not.toContain(key)
+  })
+
+  test('prefixes glued to other words, or too short, are not treated as keys', () => {
+    expect(redactString('task_live_x and ghp_short')).toBe('task_live_x and ghp_short')
+    expect(redactString('AKIAIOSFODNN7EXAMPLEX1')).toBe('AKIAIOSFODNN7EXAMPLEX1')
+  })
+})
+
+describe('card numbers stored as numbers', () => {
+  test('Luhn-valid 13–19 digit integers and BigInts are hidden at any depth', () => {
+    const out = sanitize({
+      card: { value: 4111111111111111, list: [5555555555554444] },
+      amex: 378282246310005,
+      big: 4111111111111111n,
+      visa13: 4222222222222,
+    }) as Record<string, unknown>
+    const text = JSON.stringify(out)
+    for (const leak of ['4111111111111111', '5555555555554444', '378282246310005', '4222222222222'])
+      expect(text).not.toContain(leak)
+    expect(out['amex']).toBe('[REDACTED:pan]')
+    expect(out['big']).toBe('[REDACTED:pan]')
+  })
+
+  test('ordinary numbers are kept: Luhn-invalid, too short, timestamps, fractions, negatives', () => {
+    const now = 1_763_078_400_000 // ms timestamp: starts with 1, never treated as a card
+    const values = {
+      invalid: 4111111111111112,
+      short: 411111111111,
+      ms: now,
+      us: now * 1000,
+      fraction: 4111111111111.5,
+      negative: -4111111111111111,
+      big: 1_763_078_400_000_000_000n,
+    }
+    const out = sanitize(values) as Record<string, unknown>
+    expect(out).toEqual({ ...values, big: '1763078400000000000' })
+  })
+
+  test('disabling the pan rule (tripwire) or redaction keeps numbers', () => {
+    expect(createSanitizer({ disable: new Set(['pan']) })(4111111111111111)).toBe(4111111111111111)
+    expect(createSanitizer({ redact: false })(4111111111111111n)).toBe('4111111111111111')
   })
 })
 
