@@ -16,7 +16,8 @@
  *    viewer to another machine that simply sends `Host: localhost`. When the peer is unknown,
  *    only the host check applies, because some runtimes and adapters don't expose the socket
  *    peer; refusing there would break `pnpm dev` while the `Host` check still blocks rebinding.
- * 4. **Viewer token** (`LOGS_VIEWER_TOKEN`, at least 16 characters): allowed with
+ * 4. **Viewer token** (`LOGS_VIEWER_TOKEN`, at least 16 characters), in every mode, so a dev
+ *    server reached through Docker, WSL or a VM (a non-loopback peer) can still be opened: allowed with
  *    `Authorization: Bearer <token>` or a signed session cookie. Opening the page once with
  *    `?token=<token>` sets the cookie (HttpOnly, SameSite=Strict, 8 h) and redirects to a clean URL.
  * 5. **Otherwise the viewer doesn't exist** (404), so production is safe even if you forget it.
@@ -236,9 +237,14 @@ export async function decideAccess(
   if (policy.local) {
     // Unknown peer: host-only check (see the module docs for why it doesn't fail closed).
     const peerOk = ip === undefined || isLoopbackAddress(ip)
-    return peerOk && addressedToLoopback(request)
-      ? { kind: 'allow', mode: 'local' }
-      : { kind: 'hidden' }
+    if (peerOk && addressedToLoopback(request)) return { kind: 'allow', mode: 'local' }
+    // Not a loopback request (a dev server in Docker, WSL or a VM): only the token can open it,
+    // and a request that presents no credential at all still sees no viewer (404, not 401).
+    const presents =
+      request.headers.get('authorization')?.toLowerCase().startsWith('bearer ') === true ||
+      readCookie(request.headers.get('cookie'), SESSION_COOKIE) !== undefined ||
+      (isPage && new URL(request.url).searchParams.has('token'))
+    if (!policy.token || !presents) return { kind: 'hidden' }
   }
 
   const token = policy.token

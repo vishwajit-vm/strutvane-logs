@@ -379,3 +379,58 @@ describe('files are read backwards in bounded chunks', () => {
     expect(seen.size).toBe(total)
   })
 })
+
+describe('local mode falls back to the token for non-loopback requests', () => {
+  const policy = (token: string | undefined) => ({
+    authorize: undefined,
+    token,
+    local: true,
+    allowList: undefined,
+    cookiePath: '/_strutvane/logs',
+    now: () => NOW,
+  })
+  const dockerRequest = (headers: Record<string, string> = {}) =>
+    new Request('http://localhost:3000/_strutvane/logs/api/files', { headers })
+
+  test('a dev server reached through Docker/WSL/VM opens with the token, and only with it', async () => {
+    // Peer 172.18.0.1: the Docker bridge gateway, not loopback.
+    const peer = '172.18.0.1'
+    expect((await decideAccess(policy(TOKEN), dockerRequest(), peer, false)).kind).toBe('hidden')
+    expect(
+      (
+        await decideAccess(
+          policy(TOKEN),
+          dockerRequest({ authorization: `Bearer ${TOKEN}` }),
+          peer,
+          false,
+        )
+      ).kind,
+    ).toBe('allow')
+    expect(
+      (
+        await decideAccess(
+          policy(TOKEN),
+          dockerRequest({ authorization: 'Bearer wrong-token-value' }),
+          peer,
+          false,
+        )
+      ).kind,
+    ).toBe('unauthenticated')
+    // Without a configured token, a non-loopback request in local mode stays hidden.
+    expect(
+      (
+        await decideAccess(
+          policy(undefined),
+          dockerRequest({ authorization: `Bearer ${TOKEN}` }),
+          peer,
+          false,
+        )
+      ).kind,
+    ).toBe('hidden')
+    // A DNS-rebinding request (foreign Host) is still hidden without the token.
+    const rebinding = new Request('http://evil.test/_strutvane/logs', {
+      headers: { host: 'evil.test' },
+    })
+    expect((await decideAccess(policy(TOKEN), rebinding, '127.0.0.1', true)).kind).toBe('hidden')
+  })
+})
