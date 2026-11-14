@@ -1,5 +1,4 @@
-# TEMPORARY (ADR-0016): link the sibling contracts checkout until @strutvane/contracts@0.1.0-next.0
-# is published. Remove this override before committing; CI's check-deps step rejects it.
-overrides:
-  "@strutvane/contracts": link:../contracts
-  "@strutvane/core": link:../core
+# Our own pre-releases are staged and approved with 2FA (ADR-0018), so they are exempt from
+# pnpm's minimum release age; every third-party package keeps the protection.
+minimumReleaseAgeExclude:
+  - "@strutvane/*"
