@@ -229,7 +229,8 @@ describe('access control', () => {
   })
 
   test('IP allow-list applies in every mode; IPv4-mapped addresses and CIDR ranges work', async () => {
-    const v = viewer(fixture(), { ipAllowList: ['10.0.0.0/8', '::1'] })
+    // `authorize` isolates the allow-list from local mode, which also wants a loopback peer.
+    const v = viewer(fixture(), { ipAllowList: ['10.0.0.0/8', '::1'], authorize: () => true })
     expect((await v.fetch(new Request(BASE), { ip: '10.1.2.3' })).status).toBe(200)
     expect((await v.fetch(new Request(BASE), { ip: '::ffff:10.9.9.9' })).status).toBe(200)
     expect((await v.fetch(new Request(BASE), { ip: '::1' })).status).toBe(200)

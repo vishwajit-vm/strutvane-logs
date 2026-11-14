@@ -99,7 +99,10 @@ export interface ViewerOptions {
 
 /** Facts a `Request` can't carry. */
 export interface ViewerRequestInfo {
-  /** Client IP from the socket (never from forgeable headers), used by `ipAllowList`. */
+  /**
+   * Client IP from the socket (never from forgeable headers), used by `ipAllowList` and, in local
+   * mode, required to be a loopback address when given.
+   */
   readonly ip?: string
 }
 

@@ -17,6 +17,7 @@ export {
   buildAllowList,
   decideAccess,
   ipAllowed,
+  isLoopbackAddress,
   isLoopbackHost,
   MIN_TOKEN_LENGTH,
   SESSION_COOKIE,

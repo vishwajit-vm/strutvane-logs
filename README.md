@@ -108,7 +108,7 @@ Every request gets one line like `GET /invoices/:id 200` with `{ method, route, 
 
 | Situation | Access |
 |---|---|
-| `APP_ENV=local` | Open, so `pnpm dev` just works, for requests to `localhost`, `127.0.0.1` or `[::1]` only (any other `Host` gets a 404, which blocks DNS-rebinding pages) |
+| `APP_ENV=local` | Open, so `pnpm dev` just works, for requests to `localhost`, `127.0.0.1` or `[::1]` only (any other `Host` gets a 404, which blocks DNS-rebinding pages). When the runtime exposes the client's socket address, it must be loopback too (`127.0.0.0/8`, `::1`, `::ffff:127.x.x.x`), so a dev server listening on `0.0.0.0` doesn't open the viewer to the network; when it doesn't, only the host is checked |
 | `LOGS_VIEWER_TOKEN` set (16+ characters) | `Authorization: Bearer <token>`, or open `/_strutvane/logs?token=<token>` once in a browser (sets an 8-hour, HttpOnly, SameSite=Strict cookie and redirects to a clean URL) |
 | You pass `authorize: (request) => boolean` | Only your rule decides (for example "admins only") |
 | Anything else (e.g. production with nothing set) | **404**, as if the viewer didn't exist |

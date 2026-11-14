@@ -96,7 +96,7 @@ describe('provider: viewer access pass-through', () => {
     })
     await app.boot()
     const hooks = app.make(HooksToken)
-    const request = async (url: string, clientAddress?: string, host?: string) => {
+    const request = async (url: string, clientAddress?: string, host?: string, route?: string) => {
       const req = new Request(url, host ? { headers: { host } } : {})
       const payload: HttpRequestHookPayload = {
         request: req,
@@ -109,6 +109,7 @@ describe('provider: viewer access pass-through', () => {
         request: req,
         status: out.response?.status ?? 200,
         requestId: 'r-1',
+        ...(route === undefined ? {} : { route }),
       })
       return out.response?.status
     }
@@ -153,6 +154,37 @@ describe('provider: viewer access pass-through', () => {
     )
     expect(await request('http://evil.test/_strutvane/logs')).toBe(404)
     await app.shutdown()
+  })
+
+  test('local mode through the provider checks the peer clientAddress when present', async () => {
+    const { app, request } = await boot('local')
+    const url = 'http://localhost:3000/_strutvane/logs/api/files'
+    expect(await request(url, '127.0.0.1')).toBe(200)
+    expect(await request(url, '::1')).toBe(200)
+    expect(await request(url, '::ffff:127.0.0.1')).toBe(200)
+    expect(await request(url, '192.168.1.20')).toBe(404)
+    expect(await request(url)).toBe(200) // unknown peer: host-only check
+    await app.shutdown()
+  })
+
+  test('request lines from the provider use the route template when the payload has one', async () => {
+    const { app, root, request } = await boot('local')
+    await request(
+      `http://localhost/password/reset/${RESET_TOKEN}`,
+      undefined,
+      undefined,
+      '/password/reset/:token',
+    )
+    await request('http://localhost/api/v1/invoices/42', undefined, undefined, '')
+    await app.shutdown()
+    const d = join(root, 'storage/logs')
+    const text = await readFile(join(d, (await readdir(d))[0] ?? ''), 'utf8')
+    const msgs = text
+      .trim()
+      .split('\n')
+      .map((l) => (JSON.parse(l) as { msg: string }).msg)
+    expect(msgs).toEqual(['GET /password/reset/:token 200', 'GET /api/v1/invoices/42 200'])
+    expect(text).not.toContain(RESET_TOKEN)
   })
 
   test('request lines from the provider carry the safe path', async () => {

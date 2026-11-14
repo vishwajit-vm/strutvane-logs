@@ -11,7 +11,11 @@
  *    request is addressed to a loopback host (`localhost`, `127.0.0.1` or `[::1]`, any port) in
  *    both the `Host` header and the URL. A page on another site can make a browser send requests
  *    to a local server under its own host name (DNS rebinding); those carry a foreign `Host` and
- *    get a 404.
+ *    get a 404. When the peer address is known (`ip`, from the socket), it must also be loopback
+ *    (`127.0.0.0/8`, `::1`, `::ffff:127.x.x.x`): a dev server bound to `0.0.0.0` must not open the
+ *    viewer to another machine that simply sends `Host: localhost`. When the peer is unknown,
+ *    only the host check applies, because some runtimes and adapters don't expose the socket
+ *    peer; refusing there would break `pnpm dev` while the `Host` check still blocks rebinding.
  * 4. **Viewer token** (`LOGS_VIEWER_TOKEN`, at least 16 characters): allowed with
  *    `Authorization: Bearer <token>` or a signed session cookie. Opening the page once with
  *    `?token=<token>` sets the cookie (HttpOnly, SameSite=Strict, 8 h) and redirects to a clean URL.
@@ -125,6 +129,25 @@ export function addressedToLoopback(request: Request): boolean {
   }
 }
 
+/** Loopback peers: `127.0.0.0/8` and `::1` (BlockList also matches `::ffff:127.x.x.x`). */
+const LOOPBACK_PEERS: BlockList = (() => {
+  const list = new BlockList()
+  list.addSubnet('127.0.0.0', 8, 'ipv4')
+  list.addAddress('::1', 'ipv6')
+  return list
+})()
+
+/**
+ * Is `ip` (a socket peer address) a loopback address: `127.0.0.0/8`, `::1` or an IPv4-mapped
+ * `::ffff:127.x.x.x`? Anything that isn't an IP address (empty, a host name) is `false`.
+ */
+export function isLoopbackAddress(ip: string | null | undefined): boolean {
+  if (!ip) return false
+  const family = isIP(ip)
+  if (family === 0) return false
+  return LOOPBACK_PEERS.check(ip, family === 4 ? 'ipv4' : 'ipv6')
+}
+
 /** Validate the configured token. A token that's too short is a configuration error. */
 export function validateToken(token: string | undefined, source: string): string | undefined {
   if (token === undefined || token === '') return undefined
@@ -211,7 +234,11 @@ export async function decideAccess(
   }
 
   if (policy.local) {
-    return addressedToLoopback(request) ? { kind: 'allow', mode: 'local' } : { kind: 'hidden' }
+    // Unknown peer: host-only check (see the module docs for why it doesn't fail closed).
+    const peerOk = ip === undefined || isLoopbackAddress(ip)
+    return peerOk && addressedToLoopback(request)
+      ? { kind: 'allow', mode: 'local' }
+      : { kind: 'hidden' }
   }
 
   const token = policy.token

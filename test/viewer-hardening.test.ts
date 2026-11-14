@@ -6,7 +6,12 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import { addressedToLoopback, decideAccess, isLoopbackHost } from '../src/viewer/access.ts'
+import {
+  addressedToLoopback,
+  decideAccess,
+  isLoopbackAddress,
+  isLoopbackHost,
+} from '../src/viewer/access.ts'
 import {
   createViewerHandler,
   type ViewerAuditEvent,
@@ -116,6 +121,64 @@ describe('local mode only answers loopback hosts', () => {
       true,
     )
     expect(decision.kind).toBe('hidden')
+  })
+})
+
+describe('local mode requires a loopback peer when the peer is known', () => {
+  const url = `${BASE}/api/files`
+
+  test('isLoopbackAddress accepts 127.0.0.0/8, ::1 and ::ffff:127.x.x.x only', () => {
+    for (const ok of ['127.0.0.1', '127.255.255.254', '::1', '0:0:0:0:0:0:0:1', '::ffff:127.0.0.1'])
+      expect(isLoopbackAddress(ok), ok).toBe(true)
+    for (const bad of [
+      undefined,
+      null,
+      '',
+      'localhost',
+      '128.0.0.1',
+      '10.0.0.1',
+      '0.0.0.0',
+      '::',
+      '::2',
+      '::ffff:10.0.0.1',
+      'fe80::1',
+      '127.0.0.1.nip.io',
+    ])
+      expect(isLoopbackAddress(bad), String(bad)).toBe(false)
+  })
+
+  test('loopback IPv4 peer is allowed', async () => {
+    expect((await viewer(fixture()).fetch(new Request(url), { ip: '127.0.0.1' })).status).toBe(200)
+  })
+
+  test('loopback IPv6 peer is allowed', async () => {
+    expect((await viewer(fixture()).fetch(new Request(url), { ip: '::1' })).status).toBe(200)
+  })
+
+  test('IPv4-mapped loopback peer is allowed', async () => {
+    const res = await viewer(fixture()).fetch(new Request(url), { ip: '::ffff:127.0.0.1' })
+    expect(res.status).toBe(200)
+  })
+
+  test('a non-loopback peer gets a 404 on every route, even with a loopback Host', async () => {
+    const v = viewer(fixture())
+    for (const ip of ['192.168.1.20', '10.0.0.5', '::ffff:192.168.1.20', 'fd00::1', 'garbage']) {
+      for (const path of ['', '/api/files', '/api/records', '/api/session', '/api/tail']) {
+        const req = new Request(`${BASE}${path}`, { headers: { host: 'localhost:3000' } })
+        expect((await v.fetch(req, { ip })).status, `${ip} ${path}`).toBe(404)
+      }
+    }
+  })
+
+  test('an unknown peer keeps the host-only check', async () => {
+    const v = viewer(fixture())
+    expect((await v.fetch(new Request(url))).status).toBe(200)
+    expect((await v.fetch(new Request(url, { headers: { host: 'evil.test' } }))).status).toBe(404)
+  })
+
+  test('a loopback peer does not excuse a foreign Host', async () => {
+    const req = new Request(url, { headers: { host: 'evil.test:3000' } })
+    expect((await viewer(fixture()).fetch(req, { ip: '127.0.0.1' })).status).toBe(404)
   })
 })
 

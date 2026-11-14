@@ -5,13 +5,16 @@
  * - binds `LoggerToken`, so every package logs through this logger;
  * - on `http.onRequest`, answers log-viewer requests (`/_strutvane/logs`) and notes the start
  *   time of every other request;
- * - on `http.onResponse`, writes one request-log line (method, path, status, duration). The
- *   framework's hook payload carries no route template, so the path is logged through `safePath`
+ * - on `http.onResponse`, writes one request-log line (method, path, status, duration). The path
+ *   is the payload's `route` (the matched route template, e.g. `/api/v1/invoices/:id`) when the
+ *   router knows it: a template carries no ids or tokens and groups requests per endpoint.
+ *   Otherwise (no route matched, or an older framework) the raw path is logged through `safePath`
  *   (secrets redacted, token-like segments masked, length capped).
  *
  * Settings come from `config/logging.ts` (`level`, `format`, `driver`, `path`, `retentionDays`,
  * `maxDailySize`, `requests`, `viewer`), falling back to the `LOG_*`/`LOGS_*` environment. The
- * viewer follows the RFC-0004 access rules: open when `APP_ENV=local` (for loopback hosts only),
+ * viewer follows the RFC-0004 access rules: open when `APP_ENV=local` (for loopback hosts only,
+ * and, when the payload carries `clientAddress`, for a loopback peer only),
  * otherwise only with `LOGS_VIEWER_TOKEN`, and a 404 (not a 403) for everyone else, so its
  * existence isn't revealed. `viewer.authorize`, `viewer.ipAllowList`, `viewer.scopeRecords` and
  * `viewer.onAudit` are passed through, from `config/logging.ts` or from
@@ -158,7 +161,9 @@ export function createLogsProvider(options: LogsProviderOptions = {}): Provider 
           if (begin === undefined || viewer?.matches(p.request)) return undefined
           const path = pathOf(p.request.url)
           if (requests.ignore.has(path)) return undefined
-          const route = safePath(path)
+          // A route template is safe as is (the router defines it, not the client); an empty
+          // string is treated as unknown.
+          const route = p.route ? p.route : safePath(path)
           logCompletedRequest(
             { ...requests, logger: active.child({ requestId: p.requestId }) },
             {
